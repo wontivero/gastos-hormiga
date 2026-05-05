@@ -6,6 +6,8 @@
     <title>Control de Gastos Hormiga</title>
     <!-- Configuración PWA -->
     <link rel="manifest" href="manifest.json">
+    <!-- Favicon para evitar el error 404 (Usa el emoji de hormiga) -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐜</text></svg>">
     <meta name="theme-color" content="#0d6efd">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -24,9 +26,14 @@
     <header class="bg-primary text-white p-3 shadow-sm sticky-top">
         <div class="container d-flex justify-content-between align-items-center" style="max-width: 450px;">
             <h1 class="h5 mb-0 fw-bold" id="headerTitle">🐜 Gastos Hormiga</h1>
-            <button class="btn btn-link text-white p-0 fs-4 text-decoration-none" id="configToggleBtn" title="Configuración">
-                <i class="bi bi-gear-fill" id="configIcon"></i>
-            </button>
+            <div>
+                <button class="btn btn-link text-white p-0 fs-4 text-decoration-none me-3" id="reportToggleBtn" title="Reportes">
+                    <i class="bi bi-bar-chart-fill" id="reportIcon"></i>
+                </button>
+                <button class="btn btn-link text-white p-0 fs-4 text-decoration-none" id="configToggleBtn" title="Configuración">
+                    <i class="bi bi-gear-fill" id="configIcon"></i>
+                </button>
+            </div>
         </div>
     </header>
 
@@ -121,6 +128,39 @@
         <div class="text-center mt-5 mb-4">
             <p class="small text-muted">Gastos Hormiga App v1.0<br>Guardado automático local</p>
         </div>
+    </main>
+
+    <!-- Pantalla de Reportes (Oculta por defecto) -->
+    <main class="container mt-4 d-none fade-in" id="reportView" style="max-width: 450px;">
+        <section class="card border-0 shadow-sm rounded-4 mb-4">
+            <div class="card-body p-4">
+                <h2 class="h5 fw-bold mb-3 text-secondary">Resumen de Gastos</h2>
+                
+                <!-- Filtros -->
+                <div class="mb-4">
+                    <select class="form-select rounded-3 bg-light border-0" id="reportFilter">
+                        <option value="today">Hoy</option>
+                        <option value="week">Esta semana</option>
+                        <option value="month" selected>Este mes</option>
+                        <option value="all">Todos los tiempos</option>
+                    </select>
+                </div>
+
+                <!-- Total general -->
+                <div class="text-center mb-4">
+                    <p class="text-muted small mb-1">Total Gastado</p>
+                    <h3 class="fw-bold text-danger display-5" id="reportTotal">-$0</h3>
+                </div>
+
+                <!-- Desglose por integrante -->
+                <h4 class="h6 fw-bold mb-3 text-secondary">Por Integrante</h4>
+                <div id="reportByMember" class="d-flex flex-column gap-3 mb-4"></div>
+
+                <!-- Desglose por motivo -->
+                <h4 class="h6 fw-bold mb-3 text-secondary">Por Motivo</h4>
+                <div id="reportByMotive" class="d-flex flex-column gap-3 mb-2"></div>
+            </div>
+        </section>
     </main>
 
     <!-- Modal de Edición -->

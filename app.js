@@ -15,6 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerTitle = document.getElementById('headerTitle');
     const mainView = document.getElementById('mainView');
     const configView = document.getElementById('configView');
+    const reportToggleBtn = document.getElementById('reportToggleBtn');
+    const reportIcon = document.getElementById('reportIcon');
+    const reportView = document.getElementById('reportView');
     
     // Elementos DOM - Configuración e Integrantes
     const memberSelection = document.getElementById('memberSelection');
@@ -38,12 +41,19 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const syncOverlay = document.getElementById('syncOverlay');
 
+    // Elementos DOM - Reportes
+    const reportFilter = document.getElementById('reportFilter');
+    const reportTotal = document.getElementById('reportTotal');
+    const reportByMember = document.getElementById('reportByMember');
+    const reportByMotive = document.getElementById('reportByMotive');
+
     // Estado local de la aplicación
     let selectedMember = null;
     let familyMembers = [];
     let quickMotives = [];
     let editingType = null; // 'member' o 'motive'
     let editingId = null;
+    let allExpenses = []; // Almacena todos los gastos para los reportes
 
     // Inicializar Configuración (Desde localStorage o predeterminados)
     function initConfig() {
@@ -125,6 +135,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 historyGrid.innerHTML = ''; // Limpiamos el mensaje de carga
                 
                 if (data.gastos && data.gastos.length > 0) {
+                    allExpenses = []; // Limpiamos el arreglo antes de llenarlo
+
                     data.gastos.forEach(gasto => {
                         // Buscar el color del integrante, por defecto 'secondary'
                         const member = familyMembers.find(m => m.name === gasto.integrante);
@@ -135,11 +147,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         let displayHora = gasto.hora;
                         
                         if (displayFecha && displayFecha.toString().includes('T')) {
-                            displayFecha = new Date(displayFecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                            const d = new Date(displayFecha);
+                            displayFecha = d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                            gasto.parsedDate = d;
+                        } else if (displayFecha) {
+                            // Si viene como string 'dd/mm/yyyy', la convertimos para poder filtrarla
+                            const parts = displayFecha.split('/');
+                            if (parts.length === 3) {
+                                gasto.parsedDate = new Date(parts[2], parts[1] - 1, parts[0]);
+                            }
                         }
+
                         if (displayHora && displayHora.toString().includes('T')) {
                             displayHora = new Date(displayHora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
                         }
+
+                        gasto.montoNum = parseFloat(gasto.monto) || 0;
+                        allExpenses.push(gasto);
 
                         const newExpense = document.createElement('div');
                         newExpense.className = 'd-flex align-items-center bg-white p-3 rounded-4 shadow-sm mb-3 fade-in';
@@ -408,20 +432,127 @@ document.addEventListener('DOMContentLoaded', () => {
     // Lógica ya existente que trajimos desde el HTML
     // -----------------------------------------------------
 
-    // Navegación (Engranaje)
-    configToggleBtn.addEventListener('click', () => {
-        if (mainView.classList.contains('d-none')) {
+    // Navegación de Vistas
+    function switchView(viewName) {
+        mainView.classList.add('d-none');
+        configView.classList.add('d-none');
+        reportView.classList.add('d-none');
+        
+        configIcon.className = 'bi bi-gear-fill';
+        reportIcon.className = 'bi bi-bar-chart-fill';
+
+        if (viewName === 'main') {
             mainView.classList.remove('d-none');
-            configView.classList.add('d-none');
-            configIcon.className = 'bi bi-gear-fill';
             headerTitle.innerText = '🐜 Gastos Hormiga';
-        } else {
-            mainView.classList.add('d-none');
+        } else if (viewName === 'config') {
             configView.classList.remove('d-none');
             configIcon.className = 'bi bi-x-lg';
             headerTitle.innerText = '⚙️ Configuración';
+        } else if (viewName === 'report') {
+            reportView.classList.remove('d-none');
+            reportIcon.className = 'bi bi-x-lg';
+            headerTitle.innerText = '📊 Reportes';
+            generateReport(); // Calcular reportes al entrar a la pantalla
         }
+    }
+
+    configToggleBtn.addEventListener('click', () => {
+        switchView(configView.classList.contains('d-none') ? 'config' : 'main');
     });
+
+    reportToggleBtn.addEventListener('click', () => {
+        switchView(reportView.classList.contains('d-none') ? 'report' : 'main');
+    });
+
+    // Generación de Reportes
+    reportFilter.addEventListener('change', generateReport);
+
+    function generateReport() {
+        const filter = reportFilter.value;
+        const today = new Date();
+
+        // 1. Filtrar los gastos según la fecha seleccionada
+        const filteredExpenses = allExpenses.filter(gasto => {
+            const d = gasto.parsedDate;
+            if (!d) return true; // Si por alguna razón no tiene fecha, lo mostramos
+            
+            if (filter === 'today') {
+                return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+            } else if (filter === 'week') {
+                const day = today.getDay();
+                const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Obtener el lunes de esta semana
+                const firstDayOfWeek = new Date(today.getFullYear(), today.getMonth(), diff);
+                firstDayOfWeek.setHours(0, 0, 0, 0);
+                return d >= firstDayOfWeek;
+            } else if (filter === 'month') {
+                return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+            }
+            return true; // 'all'
+        });
+
+        let total = 0;
+        const byMember = {};
+        const byMotive = {};
+
+        // 2. Agrupar montos
+        filteredExpenses.forEach(gasto => {
+            total += gasto.montoNum;
+            
+            // Por integrante
+            if (!byMember[gasto.integrante]) {
+                const memberInfo = familyMembers.find(m => m.name === gasto.integrante) || { color: 'secondary', emoji: gasto.emoji || '👤' };
+                byMember[gasto.integrante] = { monto: 0, color: memberInfo.color, emoji: memberInfo.emoji };
+            }
+            byMember[gasto.integrante].monto += gasto.montoNum;
+
+            // Por motivo
+            if (!byMotive[gasto.motivo]) {
+                byMotive[gasto.motivo] = { monto: 0, emoji: gasto.emoji || '📝' };
+            }
+            byMotive[gasto.motivo].monto += gasto.montoNum;
+        });
+
+        // 3. Renderizar resultados
+        reportTotal.innerText = `-$${total.toLocaleString('es-AR')}`;
+
+        reportByMember.innerHTML = '';
+        Object.keys(byMember).sort((a, b) => byMember[b].monto - byMember[a].monto).forEach(name => {
+            const data = byMember[name];
+            const percent = total > 0 ? (data.monto / total) * 100 : 0;
+            reportByMember.innerHTML += `
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small fw-bold">${data.emoji} ${name}</span>
+                        <span class="small fw-bold text-dark">$${data.monto.toLocaleString('es-AR')}</span>
+                    </div>
+                    <div class="progress bg-light" style="height: 10px;">
+                        <div class="progress-bar bg-${data.color} rounded-pill" role="progressbar" style="width: ${percent}%"></div>
+                    </div>
+                </div>
+            `;
+        });
+        if (Object.keys(byMember).length === 0) reportByMember.innerHTML = '<p class="text-muted small text-center">No hay datos</p>';
+
+        reportByMotive.innerHTML = '';
+        Object.keys(byMotive).sort((a, b) => byMotive[b].monto - byMotive[a].monto).forEach(name => {
+            const data = byMotive[name];
+            const percent = total > 0 ? (data.monto / total) * 100 : 0;
+            // Quitamos el emoji de la palabra si ya viene incluido, para que no se vea duplicado
+            const cleanName = name.replace(/^[^\w\s]+/u, '').trim(); 
+            reportByMotive.innerHTML += `
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small text-muted">${data.emoji} ${cleanName}</span>
+                        <span class="small fw-bold text-dark">$${data.monto.toLocaleString('es-AR')}</span>
+                    </div>
+                    <div class="progress bg-light" style="height: 10px;">
+                        <div class="progress-bar bg-secondary opacity-50 rounded-pill" role="progressbar" style="width: ${percent}%"></div>
+                    </div>
+                </div>
+            `;
+        });
+        if (Object.keys(byMotive).length === 0) reportByMotive.innerHTML = '<p class="text-muted small text-center">No hay datos</p>';
+    }
 
     // Guardar Gasto
     expenseForm.addEventListener('submit', function(e) {
@@ -506,6 +637,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         motivoInput.value = '';
         montoInput.value = '';
+
+        // Agregar el nuevo gasto a nuestro arreglo global para que los reportes se actualicen sin recargar
+        allExpenses.unshift({
+            fecha: dateText,
+            hora: timeString,
+            integrante: selectedMember.name,
+            emoji: selectedMember.emoji,
+            motivo: motivo,
+            monto: monto,
+            parsedDate: new Date(),
+            montoNum: parseFloat(monto) || 0
+        });
     }
 
     // -----------------------------------------------------
