@@ -1,5 +1,19 @@
-// Asegúrate de que esta URL sea la correcta de tu Google Script
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby9HF61PKFZVv3Y41WJKXd8_hZHIjSWvGcjPWhL-irPAjInABrVa1_WEEwPBAHmlZVVpw/exec';
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getDatabase, ref, onValue, set, push } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+// Configuración de Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyBK7eFOAHz-6pv_6nO17wuqdKCqHcpIzmg",
+  authDomain: "gastos-hormiga-674f9.firebaseapp.com",
+  databaseURL: "https://gastos-hormiga-674f9-default-rtdb.firebaseio.com",
+  projectId: "gastos-hormiga-674f9",
+  storageBucket: "gastos-hormiga-674f9.firebasestorage.app",
+  messagingSenderId: "738300409403",
+  appId: "1:738300409403:web:ef2fe75ba7ec44a5d38e1e"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 document.addEventListener('DOMContentLoaded', () => {
     // Elementos DOM - Formularios y Vistas
@@ -86,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Eliminamos saveConfig() de aquí para que el navegador nuevo no sobrescriba la nube
         renderMembers();
         renderMotives();
+        loadCachedExpenses();
         syncWithCloud(); // <- Llamamos a la sincronización al iniciar
     }
 
@@ -94,20 +109,74 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('gastosHormigaMembers', JSON.stringify(familyMembers));
         localStorage.setItem('gastosHormigaMotives', JSON.stringify(quickMotives));
         
-        // Enviar respaldo en segundo plano a Google Sheets
-        const configData = {
-            action: 'save_config',
+        // Guardar en Firebase
+        set(ref(db, 'configuracion'), {
             members: familyMembers,
             motives: quickMotives
-        };
+        }).catch(err => console.log('Error guardando en Firebase', err));
+    }
+
+    // Cargar gastos cacheados localmente para velocidad instantánea
+    function loadCachedExpenses() {
+        const cached = localStorage.getItem('gastosHormigaExpenses');
+        if (cached) {
+            try {
+                renderExpensesList(JSON.parse(cached));
+            } catch (e) { console.error('Error parseando cache', e); }
+        }
+    }
+
+    // Función centralizada para dibujar la lista de gastos
+    function renderExpensesList(gastosArray) {
+        historyGrid.innerHTML = ''; // Limpiamos la grilla
         
-        fetch(GOOGLE_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors', // Evita bloqueos de CORS en el envío en segundo plano
-            redirect: 'follow', // Permite seguir las redirecciones internas de Google
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(configData)
-        }).catch(err => console.log('Sincronización fallida', err));
+        if (gastosArray && gastosArray.length > 0) {
+            allExpenses = []; // Reiniciamos el arreglo global
+
+            gastosArray.forEach(gasto => {
+                const member = familyMembers.find(m => m.name === gasto.integrante);
+                const color = member ? member.color : 'secondary';
+
+                let displayFecha = gasto.fecha;
+                let displayHora = gasto.hora;
+                
+                if (displayFecha && displayFecha.toString().includes('T')) {
+                    const d = new Date(displayFecha);
+                    displayFecha = d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    gasto.parsedDate = d;
+                } else if (displayFecha) {
+                    const parts = displayFecha.split('/');
+                    if (parts.length === 3) {
+                        gasto.parsedDate = new Date(parts[2], parts[1] - 1, parts[0]);
+                    }
+                }
+
+                if (displayHora && displayHora.toString().includes('T')) {
+                    displayHora = new Date(displayHora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                }
+
+                gasto.montoNum = parseFloat(gasto.monto) || 0;
+                allExpenses.push(gasto);
+
+                const newExpense = document.createElement('div');
+                newExpense.className = 'd-flex align-items-center bg-white p-3 rounded-4 shadow-sm mb-3 fade-in';
+                newExpense.innerHTML = `
+                    <div class="rounded-circle bg-${color} bg-opacity-10 d-flex flex-shrink-0 align-items-center justify-content-center fs-3 me-3" style="width: 50px; height: 50px;">
+                        ${gasto.emoji}
+                    </div>
+                    <div class="flex-grow-1">
+                        <h4 class="h6 fw-bold mb-0 text-dark">${gasto.motivo}</h4>
+                        <p class="small text-muted mb-0">${displayFecha}, ${displayHora} hs</p>
+                    </div>
+                    <div class="fs-5 fw-bold text-danger">
+                        -$${gasto.monto}
+                    </div>
+                `;
+                historyGrid.appendChild(newExpense);
+            });
+        } else {
+            historyGrid.innerHTML = '<p class="text-center text-muted small py-4">No hay gastos registrados aún.</p>';
+        }
     }
 
     // Sincronizar (Descargar) datos desde Google Sheets
@@ -115,84 +184,36 @@ document.addEventListener('DOMContentLoaded', () => {
         // Asegurarnos de que el overlay se muestre
         syncOverlay.classList.remove('d-none');
 
-        fetch(GOOGLE_SCRIPT_URL, {
-            method: 'GET',
-            redirect: 'follow'
-        })
-            .then(response => response.json())
-            .then(data => {
-                // 1. Sincronizar Configuración (Familia y Motivos)
-                if (data.configuracion) {
-                    familyMembers = data.configuracion.members || familyMembers;
-                    quickMotives = data.configuracion.motives || quickMotives;
-                    localStorage.setItem('gastosHormigaMembers', JSON.stringify(familyMembers));
-                    localStorage.setItem('gastosHormigaMotives', JSON.stringify(quickMotives));
-                    renderMembers();
-                    renderMotives();
-                }
+        // Escuchar Configuración en Tiempo Real
+        onValue(ref(db, 'configuracion'), (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                familyMembers = data.members || familyMembers;
+                quickMotives = data.motives || quickMotives;
+                localStorage.setItem('gastosHormigaMembers', JSON.stringify(familyMembers));
+                localStorage.setItem('gastosHormigaMotives', JSON.stringify(quickMotives));
+                renderMembers();
+                renderMotives();
+            }
+        });
 
-                // 2. Dibujar el Historial de Gastos
-                historyGrid.innerHTML = ''; // Limpiamos el mensaje de carga
-                
-                if (data.gastos && data.gastos.length > 0) {
-                    allExpenses = []; // Limpiamos el arreglo antes de llenarlo
+        // Escuchar Gastos en Tiempo Real
+        onValue(ref(db, 'gastos'), (snapshot) => {
+            const data = snapshot.val();
+            syncOverlay.classList.add('d-none'); // Ocultar overlay al recibir datos
 
-                    data.gastos.forEach(gasto => {
-                        // Buscar el color del integrante, por defecto 'secondary'
-                        const member = familyMembers.find(m => m.name === gasto.integrante);
-                        const color = member ? member.color : 'secondary';
-
-                        // Arreglar fechas y horas si vienen en formato crudo (ISO) desde Google Sheets
-                        let displayFecha = gasto.fecha;
-                        let displayHora = gasto.hora;
-                        
-                        if (displayFecha && displayFecha.toString().includes('T')) {
-                            const d = new Date(displayFecha);
-                            displayFecha = d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                            gasto.parsedDate = d;
-                        } else if (displayFecha) {
-                            // Si viene como string 'dd/mm/yyyy', la convertimos para poder filtrarla
-                            const parts = displayFecha.split('/');
-                            if (parts.length === 3) {
-                                gasto.parsedDate = new Date(parts[2], parts[1] - 1, parts[0]);
-                            }
-                        }
-
-                        if (displayHora && displayHora.toString().includes('T')) {
-                            displayHora = new Date(displayHora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-                        }
-
-                        gasto.montoNum = parseFloat(gasto.monto) || 0;
-                        allExpenses.push(gasto);
-
-                        const newExpense = document.createElement('div');
-                        newExpense.className = 'd-flex align-items-center bg-white p-3 rounded-4 shadow-sm mb-3 fade-in';
-                        newExpense.innerHTML = `
-                            <div class="rounded-circle bg-${color} bg-opacity-10 d-flex flex-shrink-0 align-items-center justify-content-center fs-3 me-3" style="width: 50px; height: 50px;">
-                                ${gasto.emoji}
-                            </div>
-                            <div class="flex-grow-1">
-                                <h4 class="h6 fw-bold mb-0 text-dark">${gasto.motivo}</h4>
-                                <p class="small text-muted mb-0">${displayFecha}, ${displayHora} hs</p>
-                            </div>
-                            <div class="fs-5 fw-bold text-danger">
-                                -$${gasto.monto}
-                            </div>
-                        `;
-                        historyGrid.appendChild(newExpense);
-                    });
-                } else {
-                    historyGrid.innerHTML = '<p class="text-center text-muted small py-4">No hay gastos registrados aún.</p>';
-                }
-
-                // Ocultar el overlay de sincronización al terminar con éxito
-                syncOverlay.classList.add('d-none');
-            })
-            .catch(error => {
-                console.error('Error sincronizando:', error);
-                // Ocultar el overlay de todas formas si falla el internet, para no dejar la app bloqueada
-                syncOverlay.classList.add('d-none');
-            });
+            if (data) {
+                // Convertir objeto de Firebase a Array y ordenarlo por más reciente
+                const gastosArray = Object.values(data).reverse();
+                localStorage.setItem('gastosHormigaExpenses', JSON.stringify(gastosArray));
+                renderExpensesList(gastosArray);
+            } else {
+                renderExpensesList([]);
+            }
+        }, (error) => {
+            console.error('Error con Firebase:', error);
+            syncOverlay.classList.add('d-none');
+        });
     }
 
     // Función maestra: Dibuja los integrantes en la pantalla principal y en la configuración
@@ -571,85 +592,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Cambiar estado del botón a "Cargando"
-        const submitBtn = expenseForm.querySelector('button[type="submit"]');
-        const originalBtnText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Guardando...';
-        submitBtn.disabled = true;
-
         // Preparar los datos
+        const isoDate = new Date().toISOString();
         const gastoData = {
+            fecha: isoDate,
+            hora: isoDate,
             integrante: selectedMember.name,
             emoji: selectedMember.emoji,
             motivo: motivo,
             monto: monto
         };
 
-        // Enviar a la nube
-        fetch(GOOGLE_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors', // Fundamental para evitar bloqueos de Google al hacer POST
-            redirect: 'follow', // Permite que la petición termine su ciclo
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
-            body: JSON.stringify(gastoData)
-        })
-        .then(() => {
-            // Al usar no-cors la respuesta es opaca. Asumimos éxito si no hay error de red.
-            agregarGastoVisualmente(motivo, monto);
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Hubo un problema guardando en la nube. Revisa tu conexión.');
-        })
-        .finally(() => {
-            // Restaurar botón
-            submitBtn.innerHTML = originalBtnText;
-            submitBtn.disabled = false;
-        });
-    });
+        // Firebase hace la actualización en tiempo real automáticamente
+        push(ref(db, 'gastos'), gastoData)
+        .catch(error => console.error('Error:', error));
 
-    // Función separada para agregar la tarjeta a la lista y limpiar el formulario
-    function agregarGastoVisualmente(motivo, monto) {
-        const now = new Date();
-        const timeString = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        const dateText = `Hoy, ${timeString} hs`;
-
-        const newExpense = document.createElement('div');
-        newExpense.className = 'd-flex align-items-center bg-white p-3 rounded-4 shadow-sm mb-3 fade-in';
-        newExpense.innerHTML = `
-            <div class="rounded-circle bg-${selectedMember.color} bg-opacity-10 d-flex flex-shrink-0 align-items-center justify-content-center fs-3 me-3" style="width: 50px; height: 50px;">
-                ${selectedMember.emoji}
-            </div>
-            <div class="flex-grow-1">
-                <h4 class="h6 fw-bold mb-0 text-dark">${motivo}</h4>
-                <p class="small text-muted mb-0">${dateText}</p>
-            </div>
-            <div class="fs-5 fw-bold text-danger">
-                -$${monto}
-            </div>
-        `;
-
-        // Quitar el mensaje de "No hay gastos registrados aún" si existe
-        const emptyMsg = historyGrid.querySelector('p.text-center');
-        if(emptyMsg) emptyMsg.remove();
-
-        historyGrid.prepend(newExpense);
-
+        // Limpiar formulario
         motivoInput.value = '';
         montoInput.value = '';
-
-        // Agregar el nuevo gasto a nuestro arreglo global para que los reportes se actualicen sin recargar
-        allExpenses.unshift({
-            fecha: dateText,
-            hora: timeString,
-            integrante: selectedMember.name,
-            emoji: selectedMember.emoji,
-            motivo: motivo,
-            monto: monto,
-            parsedDate: new Date(),
-            montoNum: parseFloat(monto) || 0
-        });
-    }
+    });
 
     // -----------------------------------------------------
     // ARRANQUE DE LA APLICACIÓN
