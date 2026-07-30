@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getDatabase, ref, onValue, set, push } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+import { getDatabase, ref, onValue, set, push, update, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
 // Configuración de Firebase
 const firebaseConfig = {
@@ -16,14 +16,14 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Elementos DOM - Formularios y Vistas
+    // --- Elementos DOM ---
     const expenseForm = document.getElementById('expenseForm');
     const motivoInput = document.getElementById('motivoInput');
     const montoInput = document.getElementById('montoInput');
     const historyGrid = document.getElementById('historyGrid');
     const quickMotivesContainer = document.getElementById('quickMotivesContainer');
     
-    // Elementos DOM - Navegación
+    // Navegación
     const configToggleBtn = document.getElementById('configToggleBtn');
     const configIcon = document.getElementById('configIcon');
     const headerTitle = document.getElementById('headerTitle');
@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const reportIcon = document.getElementById('reportIcon');
     const reportView = document.getElementById('reportView');
     
-    // Elementos DOM - Configuración e Integrantes
+    // Integrantes y Motivos (Configuración)
     const memberSelection = document.getElementById('memberSelection');
     const configMembersList = document.getElementById('configMembersList');
     const newEmojiInput = document.getElementById('newEmojiInput');
@@ -45,38 +45,57 @@ document.addEventListener('DOMContentLoaded', () => {
     const newMotiveNameInput = document.getElementById('newMotiveNameInput');
     const addMotiveBtn = document.getElementById('addMotiveBtn');
 
-    // Elementos DOM - Modal de Edición
+    // Modales
     const editModalElement = document.getElementById('editModal');
     const editModal = new bootstrap.Modal(editModalElement);
     const editModalLabel = document.getElementById('editModalLabel');
     const editEmojiInput = document.getElementById('editEmojiInput');
     const editNameInput = document.getElementById('editNameInput');
     const saveEditBtn = document.getElementById('saveEditBtn');
-    
+
+    const editExpenseModalElement = document.getElementById('editExpenseModal');
+    const editExpenseModal = new bootstrap.Modal(editExpenseModalElement);
+    const editExpenseForm = document.getElementById('editExpenseForm');
+    const editExpenseMemberSelect = document.getElementById('editExpenseMemberSelect');
+    const editExpenseMotivoInput = document.getElementById('editExpenseMotivoInput');
+    const editExpenseMontoInput = document.getElementById('editExpenseMontoInput');
+    const editExpenseDateInput = document.getElementById('editExpenseDateInput');
+
     const syncOverlay = document.getElementById('syncOverlay');
 
-    // Elementos DOM - Reportes
+    // Filtros de Historial
+    const historyFilterContainer = document.getElementById('historyFilterContainer');
+    const historyFilterTotal = document.getElementById('historyFilterTotal');
+    const customDateRangeBox = document.getElementById('customDateRangeBox');
+    const historyDateFrom = document.getElementById('historyDateFrom');
+    const historyDateTo = document.getElementById('historyDateTo');
+
+    // Reportes
     const reportFilter = document.getElementById('reportFilter');
+    const reportCustomDateRangeBox = document.getElementById('reportCustomDateRangeBox');
+    const reportDateFrom = document.getElementById('reportDateFrom');
+    const reportDateTo = document.getElementById('reportDateTo');
     const reportTotal = document.getElementById('reportTotal');
     const reportByMember = document.getElementById('reportByMember');
     const reportByMotive = document.getElementById('reportByMotive');
 
-    // Estado local de la aplicación
+    // --- Estado de la Aplicación ---
     let selectedMember = null;
     let familyMembers = [];
     let quickMotives = [];
     let editingType = null; // 'member' o 'motive'
     let editingId = null;
-    let allExpenses = []; // Almacena todos los gastos para los reportes
+    
+    let editingExpenseKey = null;
+    let rawExpenses = []; // Todos los gastos recibidos con su key
+    let activeHistoryFilter = 'today';
 
-    // Inicializar Configuración (Desde localStorage o predeterminados)
+    // --- Inicialización ---
     function initConfig() {
         const storedMembers = localStorage.getItem('gastosHormigaMembers');
         if (storedMembers) {
-            // Si ya hay guardados, los usamos
             familyMembers = JSON.parse(storedMembers);
         } else {
-            // Predeterminados si es la primera vez que se abre la app
             familyMembers = [
                 { id: 1, name: 'Papá', emoji: '👨🏻', color: 'primary' },
                 { id: 2, name: 'Mamá', emoji: '👩🏻', color: 'danger' },
@@ -97,94 +116,39 @@ document.addEventListener('DOMContentLoaded', () => {
             ];
         }
 
-        // Eliminamos saveConfig() de aquí para que el navegador nuevo no sobrescriba la nube
         renderMembers();
         renderMotives();
         loadCachedExpenses();
-        syncWithCloud(); // <- Llamamos a la sincronización al iniciar
+        syncWithCloud();
     }
 
-    // Guardar en local y enviar respaldo a Google Sheets
     function saveConfig() {
         localStorage.setItem('gastosHormigaMembers', JSON.stringify(familyMembers));
         localStorage.setItem('gastosHormigaMotives', JSON.stringify(quickMotives));
         
-        // Guardar en Firebase
         set(ref(db, 'configuracion'), {
             members: familyMembers,
             motives: quickMotives
-        }).catch(err => console.log('Error guardando en Firebase', err));
+        }).catch(err => console.error('Error guardando configuración en Firebase:', err));
     }
 
-    // Cargar gastos cacheados localmente para velocidad instantánea
     function loadCachedExpenses() {
         const cached = localStorage.getItem('gastosHormigaExpenses');
         if (cached) {
             try {
-                renderExpensesList(JSON.parse(cached));
-            } catch (e) { console.error('Error parseando cache', e); }
+                rawExpenses = JSON.parse(cached);
+                applyHistoryFilterAndRender();
+            } catch (e) {
+                console.error('Error al parsear cache local:', e);
+            }
         }
     }
 
-    // Función centralizada para dibujar la lista de gastos
-    function renderExpensesList(gastosArray) {
-        historyGrid.innerHTML = ''; // Limpiamos la grilla
-        
-        if (gastosArray && gastosArray.length > 0) {
-            allExpenses = []; // Reiniciamos el arreglo global
-
-            gastosArray.forEach(gasto => {
-                const member = familyMembers.find(m => m.name === gasto.integrante);
-                const color = member ? member.color : 'secondary';
-
-                let displayFecha = gasto.fecha;
-                let displayHora = gasto.hora;
-                
-                if (displayFecha && displayFecha.toString().includes('T')) {
-                    const d = new Date(displayFecha);
-                    displayFecha = d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    gasto.parsedDate = d;
-                } else if (displayFecha) {
-                    const parts = displayFecha.split('/');
-                    if (parts.length === 3) {
-                        gasto.parsedDate = new Date(parts[2], parts[1] - 1, parts[0]);
-                    }
-                }
-
-                if (displayHora && displayHora.toString().includes('T')) {
-                    displayHora = new Date(displayHora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-                }
-
-                gasto.montoNum = parseFloat(gasto.monto) || 0;
-                allExpenses.push(gasto);
-
-                const newExpense = document.createElement('div');
-                newExpense.className = 'd-flex align-items-center bg-white p-3 rounded-4 shadow-sm mb-3 fade-in';
-                newExpense.innerHTML = `
-                    <div class="rounded-circle bg-${color} bg-opacity-10 d-flex flex-shrink-0 align-items-center justify-content-center fs-3 me-3" style="width: 50px; height: 50px;">
-                        ${gasto.emoji}
-                    </div>
-                    <div class="flex-grow-1">
-                        <h4 class="h6 fw-bold mb-0 text-dark">${gasto.motivo}</h4>
-                        <p class="small text-muted mb-0">${displayFecha}, ${displayHora} hs</p>
-                    </div>
-                    <div class="fs-5 fw-bold text-danger">
-                        -$${gasto.monto}
-                    </div>
-                `;
-                historyGrid.appendChild(newExpense);
-            });
-        } else {
-            historyGrid.innerHTML = '<p class="text-center text-muted small py-4">No hay gastos registrados aún.</p>';
-        }
-    }
-
-    // Sincronizar (Descargar) datos desde Google Sheets
+    // --- Sincronización Realtime ---
     function syncWithCloud() {
-        // Asegurarnos de que el overlay se muestre
         syncOverlay.classList.remove('d-none');
 
-        // Escuchar Configuración en Tiempo Real
+        // Escuchar Configuración
         onValue(ref(db, 'configuracion'), (snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -197,67 +161,305 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Escuchar Gastos en Tiempo Real
+        // Escuchar Gastos con preservación de Keys de Firebase
         onValue(ref(db, 'gastos'), (snapshot) => {
+            syncOverlay.classList.add('d-none');
             const data = snapshot.val();
-            syncOverlay.classList.add('d-none'); // Ocultar overlay al recibir datos
 
             if (data) {
-                // Convertir objeto de Firebase a Array y ordenarlo por más reciente
-                const gastosArray = Object.values(data).reverse();
-                localStorage.setItem('gastosHormigaExpenses', JSON.stringify(gastosArray));
-                renderExpensesList(gastosArray);
+                // Convertir objeto de Firebase a Array conservando la Key
+                rawExpenses = Object.entries(data).map(([key, value]) => ({
+                    ...value,
+                    key: key
+                })).reverse(); // Los más recientes primero
+
+                localStorage.setItem('gastosHormigaExpenses', JSON.stringify(rawExpenses));
+                applyHistoryFilterAndRender();
+                if (!reportView.classList.contains('d-none')) {
+                    generateReport();
+                }
             } else {
-                renderExpensesList([]);
+                rawExpenses = [];
+                localStorage.setItem('gastosHormigaExpenses', JSON.stringify([]));
+                applyHistoryFilterAndRender();
+                if (!reportView.classList.contains('d-none')) {
+                    generateReport();
+                }
             }
         }, (error) => {
-            console.error('Error con Firebase:', error);
+            console.error('Error en conexión Firebase:', error);
             syncOverlay.classList.add('d-none');
         });
     }
 
-    // Función maestra: Dibuja los integrantes en la pantalla principal y en la configuración
+    // --- Filtros de Fecha Avanzados ---
+    function filterExpensesByDate(expenses, filterType, customFromVal, customToVal) {
+        const today = new Date();
+
+        return expenses.filter(gasto => {
+            let d = null;
+            if (gasto.fecha) {
+                if (gasto.fecha.includes('T')) {
+                    d = new Date(gasto.fecha);
+                } else {
+                    const parts = gasto.fecha.split('/');
+                    if (parts.length === 3) {
+                        d = new Date(parts[2], parts[1] - 1, parts[0]);
+                    }
+                }
+            }
+            if (!d || isNaN(d.getTime())) return true; // Si no hay fecha válida, se incluye
+
+            gasto.parsedDateObj = d;
+
+            if (filterType === 'today') {
+                return d.getDate() === today.getDate() &&
+                       d.getMonth() === today.getMonth() &&
+                       d.getFullYear() === today.getFullYear();
+            }
+            
+            if (filterType === 'week') {
+                const currentDay = today.getDay();
+                const diffToMonday = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
+                const monday = new Date(today.getFullYear(), today.getMonth(), diffToMonday);
+                monday.setHours(0, 0, 0, 0);
+                return d >= monday;
+            }
+
+            if (filterType === 'month') {
+                return d.getMonth() === today.getMonth() &&
+                       d.getFullYear() === today.getFullYear();
+            }
+
+            if (filterType === 'last_month') {
+                const lastMonthYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+                const lastMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+                return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear;
+            }
+
+            if (filterType === 'custom') {
+                if (!customFromVal && !customToVal) return true;
+                const fromDate = customFromVal ? new Date(customFromVal + 'T00:00:00') : new Date(0);
+                const toDate = customToVal ? new Date(customToVal + 'T23:59:59') : new Date();
+                return d >= fromDate && d <= toDate;
+            }
+
+            return true; // 'all'
+        });
+    }
+
+    // Aplicar filtro al Historial y Renderizar
+    function applyHistoryFilterAndRender() {
+        const filtered = filterExpensesByDate(
+            rawExpenses,
+            activeHistoryFilter,
+            historyDateFrom.value,
+            historyDateTo.value
+        );
+
+        renderExpensesList(filtered);
+    }
+
+    // --- Renderizado del Historial con Acciones (Editar/Borrar) ---
+    function renderExpensesList(gastosArray) {
+        historyGrid.innerHTML = '';
+        let currentFilterTotal = 0;
+
+        if (gastosArray && gastosArray.length > 0) {
+            gastosArray.forEach(gasto => {
+                const montoNum = parseFloat(gasto.monto) || 0;
+                currentFilterTotal += montoNum;
+
+                const member = familyMembers.find(m => m.name === gasto.integrante);
+                const color = member ? member.color : 'secondary';
+
+                // Formatear Fecha y Hora amigablemente
+                let fechaTexto = gasto.fecha || '';
+                let horaTexto = gasto.hora || '';
+                
+                if (gasto.parsedDateObj || (gasto.fecha && gasto.fecha.includes('T'))) {
+                    const d = gasto.parsedDateObj || new Date(gasto.fecha);
+                    const hoy = new Date();
+                    const esHoy = d.getDate() === hoy.getDate() && d.getMonth() === hoy.getMonth() && d.getFullYear() === hoy.getFullYear();
+                    
+                    if (esHoy) {
+                        fechaTexto = 'Hoy';
+                    } else {
+                        fechaTexto = d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+                    }
+                    
+                    if (gasto.hora && gasto.hora.includes('T')) {
+                        horaTexto = new Date(gasto.hora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                    }
+                }
+
+                const card = document.createElement('div');
+                card.className = 'expense-card d-flex align-items-center justify-content-between fade-in';
+                card.innerHTML = `
+                    <div class="d-flex align-items-center flex-grow-1 me-2 overflow-hidden">
+                        <div class="rounded-circle bg-${color} bg-opacity-10 text-${color} d-flex flex-shrink-0 align-items-center justify-content-center fs-3 me-3" style="width: 48px; height: 48px;">
+                            ${gasto.emoji || '💸'}
+                        </div>
+                        <div class="text-truncate">
+                            <div class="d-flex align-items-center gap-2">
+                                <h4 class="h6 fw-bold mb-0 text-dark text-truncate">${gasto.motivo}</h4>
+                                <span class="badge bg-light text-secondary border small" style="font-size: 0.7rem;">${gasto.integrante}</span>
+                            </div>
+                            <p class="x-small text-muted mb-0 mt-1" style="font-size: 0.75rem;">${fechaTexto}${horaTexto ? `, ${horaTexto} hs` : ''}</p>
+                        </div>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                        <div class="fw-bold text-danger fs-6 me-1">
+                            -$${montoNum.toLocaleString('es-AR')}
+                        </div>
+                        <div class="expense-actions d-flex gap-1">
+                            <button class="btn btn-sm btn-light text-primary edit-exp-btn" title="Editar gasto">
+                                <i class="bi bi-pencil-fill"></i>
+                            </button>
+                            <button class="btn btn-sm btn-light text-danger del-exp-btn" title="Eliminar gasto">
+                                <i class="bi bi-trash-fill"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                // Event Listeners para Editar y Eliminar
+                const editBtn = card.querySelector('.edit-exp-btn');
+                const delBtn = card.querySelector('.del-exp-btn');
+
+                editBtn.addEventListener('click', () => openEditExpenseModal(gasto));
+                delBtn.addEventListener('click', () => deleteExpense(gasto.key));
+
+                historyGrid.appendChild(card);
+            });
+        } else {
+            historyGrid.innerHTML = `
+                <div class="text-center text-muted py-5 card-custom">
+                    <p class="fs-2 mb-1">🐜</p>
+                    <p class="small mb-0 fw-semibold">No hay gastos registrados en este período.</p>
+                </div>
+            `;
+        }
+
+        historyFilterTotal.innerText = `-$${currentFilterTotal.toLocaleString('es-AR')}`;
+    }
+
+    // --- Manejo de Eventos de Filtros ---
+    historyFilterContainer.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            historyFilterContainer.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+
+            activeHistoryFilter = chip.dataset.filter;
+            if (activeHistoryFilter === 'custom') {
+                customDateRangeBox.classList.remove('d-none');
+            } else {
+                customDateRangeBox.classList.add('d-none');
+            }
+            applyHistoryFilterAndRender();
+        });
+    });
+
+    historyDateFrom.addEventListener('change', applyHistoryFilterAndRender);
+    historyDateTo.addEventListener('change', applyHistoryFilterAndRender);
+
+    // --- Lógica para Editar y Eliminar Gastos en Firebase ---
+    function openEditExpenseModal(gasto) {
+        editingExpenseKey = gasto.key;
+
+        // Cargar integrantes en el selector del modal
+        editExpenseMemberSelect.innerHTML = '';
+        familyMembers.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.name;
+            opt.textContent = `${m.emoji} ${m.name}`;
+            if (m.name === gasto.integrante) opt.selected = true;
+            editExpenseMemberSelect.appendChild(opt);
+        });
+
+        editExpenseMotivoInput.value = gasto.motivo;
+        editExpenseMontoInput.value = gasto.monto;
+
+        // Formatear datetime-local
+        if (gasto.fecha && gasto.fecha.includes('T')) {
+            const d = new Date(gasto.fecha);
+            const isoLocal = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+            editExpenseDateInput.value = isoLocal;
+        } else {
+            editExpenseDateInput.value = '';
+        }
+
+        editExpenseModal.show();
+    }
+
+    editExpenseForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!editingExpenseKey) return;
+
+        const selectedMemberName = editExpenseMemberSelect.value;
+        const memberInfo = familyMembers.find(m => m.name === selectedMemberName) || { emoji: '👤' };
+
+        const newMotivo = editExpenseMotivoInput.value.trim();
+        const newMonto = editExpenseMontoInput.value.trim();
+        const dateVal = editExpenseDateInput.value;
+
+        const newIsoDate = dateVal ? new Date(dateVal).toISOString() : new Date().toISOString();
+
+        const updatedData = {
+            integrante: selectedMemberName,
+            emoji: memberInfo.emoji,
+            motivo: newMotivo,
+            monto: newMonto,
+            fecha: newIsoDate,
+            hora: newIsoDate
+        };
+
+        update(ref(db, `gastos/${editingExpenseKey}`), updatedData)
+            .then(() => {
+                editExpenseModal.hide();
+                editingExpenseKey = null;
+            })
+            .catch(err => alert('Error al actualizar el gasto: ' + err.message));
+    });
+
+    function deleteExpense(key) {
+        if (confirm('¿Estás seguro de borrar este gasto?')) {
+            remove(ref(db, `gastos/${key}`))
+                .catch(err => alert('Error al borrar el gasto: ' + err.message));
+        }
+    }
+
+    // --- Renderizado de Integrantes y Motivos Rápidos ---
     function renderMembers() {
         memberSelection.innerHTML = '';
         configMembersList.innerHTML = '';
 
-        if (familyMembers.length === 0) {
-            memberSelection.innerHTML = '<p class="small text-muted mb-0">No hay integrantes. Agrégalos en ⚙️.</p>';
-        }
-
         familyMembers.forEach((member, index) => {
-            // -- 1. Renderizar en la pantalla PRINCIPAL --
             const btn = document.createElement('button');
             btn.type = 'button';
-            
-            // Marcar el primero como seleccionado por defecto
             const isActive = index === 0;
             if (isActive) selectedMember = member;
 
-            const activeBtnClass = isActive ? 'btn-outline-primary active' : 'btn-outline-secondary';
-            const fwClass = isActive ? 'fw-bold' : '';
-
-            btn.className = `btn ${activeBtnClass} d-flex flex-column align-items-center p-2 rounded-3 member-btn`;
-            btn.style.minWidth = '70px';
+            btn.className = `btn member-btn d-flex flex-column align-items-center p-2 ${isActive ? 'active' : ''}`;
+            btn.style.minWidth = '72px';
             btn.innerHTML = `
-                <span class="fs-3">${member.emoji}</span>
-                <span class="small ${fwClass} mt-1">${member.name}</span>
+                <span class="fs-3 mb-1">${member.emoji}</span>
+                <span class="small fw-semibold text-dark">${member.name}</span>
             `;
 
-            // Al hacer clic, se selecciona
             btn.addEventListener('click', () => selectMember(btn, member));
             memberSelection.appendChild(btn);
 
-            // -- 2. Renderizar en la pantalla de CONFIGURACIÓN --
+            // Lista Configuración
             const li = document.createElement('li');
-            li.className = 'list-group-item d-flex justify-content-between align-items-center px-0';
+            li.className = 'list-group-item d-flex justify-content-between align-items-center px-0 bg-transparent';
             li.innerHTML = `<div><span class="fs-4 me-2">${member.emoji}</span> <span class="fw-bold text-dark">${member.name}</span></div>`;
             
             const btnContainer = document.createElement('div');
-
             const editBtn = document.createElement('button');
-            editBtn.className = 'btn btn-sm text-primary border-0 me-2';
-            editBtn.innerHTML = '<i class="bi bi-pencil fs-5"></i>';
+            editBtn.className = 'btn btn-sm text-primary border-0 me-1';
+            editBtn.innerHTML = '<i class="bi bi-pencil-square fs-5"></i>';
             editBtn.addEventListener('click', () => editMember(member.id));
 
             const delBtn = document.createElement('button');
@@ -272,51 +474,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Seleccionar visualmente un integrante en la pantalla principal
     function selectMember(clickedBtn, member) {
-        document.querySelectorAll('.member-btn').forEach(btn => {
-            btn.classList.remove('btn-outline-primary', 'active');
-            btn.classList.add('btn-outline-secondary');
-            btn.querySelector('span:nth-child(2)').classList.remove('fw-bold');
-        });
-        
-        clickedBtn.classList.remove('btn-outline-secondary');
-        clickedBtn.classList.add('btn-outline-primary', 'active');
-        clickedBtn.querySelector('span:nth-child(2)').classList.add('fw-bold');
-
+        document.querySelectorAll('.member-btn').forEach(btn => btn.classList.remove('active'));
+        clickedBtn.classList.add('active');
         selectedMember = member;
     }
 
-    // Agregar nuevo integrante
     addMemberBtn.addEventListener('click', () => {
         const emoji = newEmojiInput.value.trim();
         const name = newNameInput.value.trim();
 
         if (!emoji || !name) {
-            alert('Por favor ingresa un emoji y un nombre.');
+            alert('Ingresá un emoji y un nombre.');
             return;
         }
 
-        // Asignamos un color aleatorio de Bootstrap para darle estilo
         const colores = ['primary', 'danger', 'success', 'warning', 'info', 'secondary', 'dark'];
         const randomColor = colores[Math.floor(Math.random() * colores.length)];
 
         familyMembers.push({
-            id: Date.now(), // ID único basado en el tiempo actual
+            id: Date.now(),
             name: name,
             emoji: emoji,
             color: randomColor
         });
 
         saveConfig();
-        renderMembers(); // Redibujar todo
+        renderMembers();
 
-        // Limpiar inputs
         newEmojiInput.value = '';
         newNameInput.value = '';
     });
 
-    // Editar integrante
     function editMember(id) {
         const member = familyMembers.find(m => m.id === id);
         if (!member) return;
@@ -331,41 +520,38 @@ document.addEventListener('DOMContentLoaded', () => {
         editModal.show();
     }
 
-    // Eliminar integrante
     function deleteMember(id) {
-        if(confirm('¿Seguro que quieres eliminar este integrante?')) {
+        if(confirm('¿Eliminar este integrante?')) {
             familyMembers = familyMembers.filter(m => m.id !== id);
             saveConfig();
             renderMembers();
         }
     }
 
-    // --- LÓGICA DE MOTIVOS RÁPIDOS ---
     function renderMotives() {
         quickMotivesContainer.innerHTML = '';
         configMotivesList.innerHTML = '';
 
         quickMotives.forEach(motive => {
-            // 1. Renderizar en la pantalla PRINCIPAL
+            // Principal
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'btn btn-sm btn-outline-secondary rounded-pill quick-motive-btn';
+            btn.className = 'btn btn-sm btn-light border rounded-pill fw-semibold px-3 text-secondary';
             btn.innerText = `${motive.emoji} ${motive.name}`;
             btn.addEventListener('click', () => {
-                motivoInput.value = btn.innerText;
+                motivoInput.value = motive.name;
             });
             quickMotivesContainer.appendChild(btn);
 
-            // 2. Renderizar en CONFIGURACIÓN
+            // Configuración
             const li = document.createElement('li');
-            li.className = 'list-group-item d-flex justify-content-between align-items-center px-0';
+            li.className = 'list-group-item d-flex justify-content-between align-items-center px-0 bg-transparent';
             li.innerHTML = `<div><span class="fs-5 me-2">${motive.emoji}</span> <span class="fw-bold text-dark">${motive.name}</span></div>`;
             
             const btnContainer = document.createElement('div');
-
             const editBtn = document.createElement('button');
-            editBtn.className = 'btn btn-sm text-primary border-0 me-2';
-            editBtn.innerHTML = '<i class="bi bi-pencil fs-5"></i>';
+            editBtn.className = 'btn btn-sm text-primary border-0 me-1';
+            editBtn.innerHTML = '<i class="bi bi-pencil-square fs-5"></i>';
             editBtn.addEventListener('click', () => editMotive(motive.id));
 
             const delBtn = document.createElement('button');
@@ -385,7 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const name = newMotiveNameInput.value.trim();
 
         if (!emoji || !name) {
-            alert('Por favor ingresa un emoji y un nombre para el motivo.');
+            alert('Ingresá un emoji y nombre para el motivo.');
             return;
         }
 
@@ -411,22 +597,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function deleteMotive(id) {
-        if(confirm('¿Seguro que quieres eliminar este motivo?')) {
+        if(confirm('¿Eliminar este motivo?')) {
             quickMotives = quickMotives.filter(m => m.id !== id);
             saveConfig();
             renderMotives();
         }
     }
 
-    // Guardar cambios desde el modal
     saveEditBtn.addEventListener('click', () => {
         const newEmoji = editEmojiInput.value.trim();
         const newName = editNameInput.value.trim();
 
-        if (!newEmoji || !newName) {
-            alert('El emoji y el nombre no pueden estar vacíos.');
-            return;
-        }
+        if (!newEmoji || !newName) return;
 
         if (editingType === 'member') {
             const member = familyMembers.find(m => m.id === editingId);
@@ -449,11 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
         editModal.hide();
     });
 
-    // -----------------------------------------------------
-    // Lógica ya existente que trajimos desde el HTML
-    // -----------------------------------------------------
-
-    // Navegación de Vistas
+    // --- Navegación entre Pantallas ---
     function switchView(viewName) {
         mainView.classList.add('d-none');
         configView.classList.add('d-none');
@@ -464,76 +642,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (viewName === 'main') {
             mainView.classList.remove('d-none');
-            headerTitle.innerText = '🐜 Gastos Hormiga';
+            headerTitle.innerHTML = '<span class="me-2">🐜</span> Gastos Hormiga';
         } else if (viewName === 'config') {
             configView.classList.remove('d-none');
             configIcon.className = 'bi bi-x-lg';
-            headerTitle.innerText = '⚙️ Configuración';
+            headerTitle.innerHTML = '<span class="me-2">⚙️</span> Configuración';
         } else if (viewName === 'report') {
             reportView.classList.remove('d-none');
             reportIcon.className = 'bi bi-x-lg';
-            headerTitle.innerText = '📊 Reportes';
-            generateReport(); // Calcular reportes al entrar a la pantalla
+            headerTitle.innerHTML = '<span class="me-2">📊</span> Reportes';
+            generateReport();
         }
     }
 
-    configToggleBtn.addEventListener('click', () => {
-        switchView(configView.classList.contains('d-none') ? 'config' : 'main');
+    configToggleBtn.addEventListener('click', () => switchView(configView.classList.contains('d-none') ? 'config' : 'main'));
+    reportToggleBtn.addEventListener('click', () => switchView(reportView.classList.contains('d-none') ? 'report' : 'main'));
+
+    // --- Generación de Reportes ---
+    reportFilter.addEventListener('change', () => {
+        if (reportFilter.value === 'custom') {
+            reportCustomDateRangeBox.classList.remove('d-none');
+        } else {
+            reportCustomDateRangeBox.classList.add('d-none');
+        }
+        generateReport();
     });
 
-    reportToggleBtn.addEventListener('click', () => {
-        switchView(reportView.classList.contains('d-none') ? 'report' : 'main');
-    });
-
-    // Generación de Reportes
-    reportFilter.addEventListener('change', generateReport);
+    reportDateFrom.addEventListener('change', generateReport);
+    reportDateTo.addEventListener('change', generateReport);
 
     function generateReport() {
-        const filter = reportFilter.value;
-        const today = new Date();
-
-        // 1. Filtrar los gastos según la fecha seleccionada
-        const filteredExpenses = allExpenses.filter(gasto => {
-            const d = gasto.parsedDate;
-            if (!d) return true; // Si por alguna razón no tiene fecha, lo mostramos
-            
-            if (filter === 'today') {
-                return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-            } else if (filter === 'week') {
-                const day = today.getDay();
-                const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Obtener el lunes de esta semana
-                const firstDayOfWeek = new Date(today.getFullYear(), today.getMonth(), diff);
-                firstDayOfWeek.setHours(0, 0, 0, 0);
-                return d >= firstDayOfWeek;
-            } else if (filter === 'month') {
-                return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-            }
-            return true; // 'all'
-        });
+        const filterVal = reportFilter.value;
+        const filteredExpenses = filterExpensesByDate(rawExpenses, filterVal, reportDateFrom.value, reportDateTo.value);
 
         let total = 0;
         const byMember = {};
         const byMotive = {};
 
-        // 2. Agrupar montos
         filteredExpenses.forEach(gasto => {
-            total += gasto.montoNum;
-            
+            const montoNum = parseFloat(gasto.monto) || 0;
+            total += montoNum;
+
             // Por integrante
             if (!byMember[gasto.integrante]) {
                 const memberInfo = familyMembers.find(m => m.name === gasto.integrante) || { color: 'secondary', emoji: gasto.emoji || '👤' };
                 byMember[gasto.integrante] = { monto: 0, color: memberInfo.color, emoji: memberInfo.emoji };
             }
-            byMember[gasto.integrante].monto += gasto.montoNum;
+            byMember[gasto.integrante].monto += montoNum;
 
             // Por motivo
             if (!byMotive[gasto.motivo]) {
                 byMotive[gasto.motivo] = { monto: 0, emoji: gasto.emoji || '📝' };
             }
-            byMotive[gasto.motivo].monto += gasto.montoNum;
+            byMotive[gasto.motivo].monto += montoNum;
         });
 
-        // 3. Renderizar resultados
         reportTotal.innerText = `-$${total.toLocaleString('es-AR')}`;
 
         reportByMember.innerHTML = '';
@@ -543,22 +706,21 @@ document.addEventListener('DOMContentLoaded', () => {
             reportByMember.innerHTML += `
                 <div>
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span class="small fw-bold">${data.emoji} ${name}</span>
+                        <span class="small fw-semibold text-dark">${data.emoji} ${name}</span>
                         <span class="small fw-bold text-dark">$${data.monto.toLocaleString('es-AR')}</span>
                     </div>
-                    <div class="progress bg-light" style="height: 10px;">
+                    <div class="progress bg-light" style="height: 10px; border-radius: 20px;">
                         <div class="progress-bar bg-${data.color} rounded-pill" role="progressbar" style="width: ${percent}%"></div>
                     </div>
                 </div>
             `;
         });
-        if (Object.keys(byMember).length === 0) reportByMember.innerHTML = '<p class="text-muted small text-center">No hay datos</p>';
+        if (Object.keys(byMember).length === 0) reportByMember.innerHTML = '<p class="text-muted small text-center py-2">Sin gastos en este período.</p>';
 
         reportByMotive.innerHTML = '';
         Object.keys(byMotive).sort((a, b) => byMotive[b].monto - byMotive[a].monto).forEach(name => {
             const data = byMotive[name];
             const percent = total > 0 ? (data.monto / total) * 100 : 0;
-            // Quitamos el emoji de la palabra si ya viene incluido, para que no se vea duplicado
             const cleanName = name.replace(/^[^\w\s]+/u, '').trim(); 
             reportByMotive.innerHTML += `
                 <div>
@@ -566,21 +728,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="small text-muted">${data.emoji} ${cleanName}</span>
                         <span class="small fw-bold text-dark">$${data.monto.toLocaleString('es-AR')}</span>
                     </div>
-                    <div class="progress bg-light" style="height: 10px;">
-                        <div class="progress-bar bg-secondary opacity-50 rounded-pill" role="progressbar" style="width: ${percent}%"></div>
+                    <div class="progress bg-light" style="height: 10px; border-radius: 20px;">
+                        <div class="progress-bar bg-primary opacity-75 rounded-pill" role="progressbar" style="width: ${percent}%"></div>
                     </div>
                 </div>
             `;
         });
-        if (Object.keys(byMotive).length === 0) reportByMotive.innerHTML = '<p class="text-muted small text-center">No hay datos</p>';
+        if (Object.keys(byMotive).length === 0) reportByMotive.innerHTML = '<p class="text-muted small text-center py-2">Sin gastos en este período.</p>';
     }
 
-    // Guardar Gasto
+    // --- Guardar Nuevo Gasto ---
     expenseForm.addEventListener('submit', function(e) {
-        e.preventDefault(); // Evita que la página se recargue
+        e.preventDefault();
         
         if (!selectedMember) {
-            alert('Por favor, selecciona un integrante.');
+            alert('Seleccioná un integrante.');
             return;
         }
 
@@ -588,11 +750,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const monto = montoInput.value.trim();
 
         if (!motivo || !monto) {
-            alert('Por favor, completa el motivo y el monto.');
+            alert('Completá el motivo y el monto.');
             return;
         }
 
-        // Preparar los datos
         const isoDate = new Date().toISOString();
         const gastoData = {
             fecha: isoDate,
@@ -603,17 +764,14 @@ document.addEventListener('DOMContentLoaded', () => {
             monto: monto
         };
 
-        // Firebase hace la actualización en tiempo real automáticamente
         push(ref(db, 'gastos'), gastoData)
-        .catch(error => console.error('Error:', error));
-
-        // Limpiar formulario
-        motivoInput.value = '';
-        montoInput.value = '';
+            .then(() => {
+                motivoInput.value = '';
+                montoInput.value = '';
+            })
+            .catch(error => alert('Error al guardar gasto: ' + error.message));
     });
 
-    // -----------------------------------------------------
-    // ARRANQUE DE LA APLICACIÓN
-    // -----------------------------------------------------
+    // Arrancar la app
     initConfig();
 });

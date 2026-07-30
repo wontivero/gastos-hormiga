@@ -4,17 +4,154 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Gastos Hormiga</title>
+    
     <!-- Configuración PWA -->
     <link rel="manifest" href="manifest.json">
-    <!-- Favicon para evitar el error 404 (Usa el emoji de hormiga) -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐜</text></svg>">
     <meta name="theme-color" content="#0d6efd">
-    <!-- Bootstrap 5 CSS -->
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Bootstrap 5 CSS & Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons (Para el ícono de configuración) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <!-- Estilos personalizados para diseño ultra moderno en Mobile -->
+    <style>
+        :root {
+            --app-bg: #f4f6fb;
+            --card-radius: 20px;
+            --primary-gradient: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+            --header-glass: rgba(13, 110, 253, 0.92);
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--app-bg);
+            color: #2b2f38;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Glassmorphism Header */
+        header.sticky-top {
+            background: var(--header-glass) !important;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        /* Tarjetas con sombras suaves y esquinas redondeadas */
+        .card-custom {
+            border: none;
+            border-radius: var(--card-radius);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+            background: #ffffff;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        /* Animación suave para elementos */
+        .fade-in {
+            animation: fadeIn 0.25s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Chips de Selección de Integrantes */
+        .member-btn {
+            border-radius: 16px !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid transparent !important;
+            background: #f8f9fa;
+        }
+
+        .member-btn.active {
+            background: #e7f1ff !important;
+            border-color: #0d6efd !important;
+            transform: scale(1.03);
+            box-shadow: 0 4px 12px rgba(13, 110, 253, 0.15);
+        }
+
+        /* Chips de filtro rápido */
+        .filter-chip {
+            font-size: 0.82rem;
+            font-weight: 600;
+            padding: 0.4rem 0.85rem;
+            border-radius: 50rem;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid #e2e8f0;
+            background-color: #ffffff;
+            color: #64748b;
+        }
+
+        .filter-chip.active {
+            background-color: #0d6efd;
+            color: #ffffff;
+            border-color: #0d6efd;
+            box-shadow: 0 4px 10px rgba(13, 110, 253, 0.25);
+        }
+
+        /* Ocultar barra de scroll pero permitir deslizamiento */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Tarjeta de Gasto en el Historial */
+        .expense-card {
+            border-radius: 16px;
+            background: #ffffff;
+            padding: 1rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+            transition: all 0.2s ease;
+            border: 1px solid rgba(0,0,0,0.02);
+        }
+
+        .expense-card:active {
+            transform: scale(0.98);
+        }
+
+        .expense-actions .btn {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+        }
+
+        /* Custom Input styling */
+        .form-control:focus, .form-select:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.12);
+        }
+
+        .amount-input-lg {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #0d6efd;
+            background-color: #f8fafc;
+            border: 2px dashed #cbd5e1;
+        }
+
+        .amount-input-lg:focus {
+            border-style: solid;
+            background-color: #ffffff;
+        }
+    </style>
 </head>
-<body class="bg-light pb-5">
+<body class="pb-5">
 
     <!-- Overlay de Sincronización -->
     <div id="syncOverlay" class="position-fixed bottom-0 start-50 translate-middle-x mb-4 bg-dark text-white px-3 py-2 rounded-pill shadow-lg d-flex align-items-center fade-in d-none" style="z-index: 9999; font-size: 0.85rem;">
@@ -22,10 +159,12 @@
         <span class="fw-bold">Sincronizando...</span>
     </div>
 
-    <!-- Encabezado -->
-    <header class="bg-primary text-white p-3 shadow-sm sticky-top">
-        <div class="container d-flex justify-content-between align-items-center" style="max-width: 450px;">
-            <h1 class="h5 mb-0 fw-bold" id="headerTitle">🐜 Gastos Hormiga</h1>
+    <!-- Encabezado con Glassmorphism -->
+    <header class="text-white p-3 shadow-sm sticky-top">
+        <div class="container d-flex justify-content-between align-items-center" style="max-width: 480px;">
+            <h1 class="h5 mb-0 fw-bold d-flex align-items-center" id="headerTitle">
+                <span class="me-2">🐜</span> Gastos Hormiga
+            </h1>
             <div>
                 <button class="btn btn-link text-white p-0 fs-4 text-decoration-none me-3" id="reportToggleBtn" title="Reportes">
                     <i class="bi bi-bar-chart-fill" id="reportIcon"></i>
@@ -37,134 +176,164 @@
         </div>
     </header>
 
-    <main class="container mt-4 fade-in" id="mainView" style="max-width: 450px;">
+    <!-- Vista Principal: Cargar y Ver Gastos -->
+    <main class="container mt-3 fade-in" id="mainView" style="max-width: 480px;">
         
         <!-- Tarjeta para Cargar Gasto -->
-        <section class="card border-0 shadow-sm rounded-4 mb-4">
-            <div class="card-body p-4">
-                <h2 class="h5 fw-bold mb-4 text-secondary">Nuevo Gasto</h2>
-                
-                <form id="expenseForm">
-                    <!-- Seleccionar Integrante -->
-                    <div class="mb-3">
-                        <label class="form-label text-muted small mb-2">¿Quién gastó?</label>
-                        <div class="d-flex gap-2 overflow-x-auto pb-2" id="memberSelection">
-                            <!-- Los integrantes se cargarán dinámicamente desde JS -->
-                        </div>
+        <section class="card-custom p-4 mb-4">
+            <h2 class="h6 fw-bold mb-3 text-uppercase tracking-wider text-muted style-sub">Nuevo Gasto</h2>
+            
+            <form id="expenseForm">
+                <!-- Seleccionar Integrante -->
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-semibold mb-2">¿Quién gastó?</label>
+                    <div class="d-flex gap-2 overflow-x-auto no-scrollbar pb-2" id="memberSelection">
+                        <!-- Los integrantes se cargarán dinámicamente -->
                     </div>
+                </div>
 
-                    <!-- Motivo -->
-                    <div class="mb-3">
-                        <label class="form-label text-muted small mb-1">Motivo</label>
-                        <input type="text" id="motivoInput" placeholder="Ej. Kiosco, propina..." class="form-control rounded-3 p-2 mb-2">
-                        <!-- Botones rápidos -->
-                        <div class="d-flex gap-2 overflow-x-auto pb-1" style="white-space: nowrap;" id="quickMotivesContainer">
-                            <!-- Los motivos rápidos se cargarán dinámicamente -->
-                        </div>
+                <!-- Motivo -->
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-semibold mb-1">Motivo</label>
+                    <input type="text" id="motivoInput" placeholder="Ej. Kiosco, propina, café..." class="form-control rounded-3 p-2 mb-2" required>
+                    <!-- Botones rápidos -->
+                    <div class="d-flex gap-2 overflow-x-auto no-scrollbar pb-1" id="quickMotivesContainer">
+                        <!-- Los motivos rápidos se cargarán dinámicamente -->
                     </div>
+                </div>
 
-                    <!-- Monto -->
-                    <div class="mb-4">
-                        <label class="form-label text-muted small mb-1">Monto ($)</label>
-                        <input type="number" id="montoInput" step="1" inputmode="numeric" placeholder="0" class="form-control form-control-lg rounded-3 text-center fw-bold fs-3">
-                    </div>
+                <!-- Monto -->
+                <div class="mb-4">
+                    <label class="form-label text-muted small fw-semibold mb-1">Monto ($)</label>
+                    <input type="number" id="montoInput" step="any" inputmode="decimal" placeholder="0" class="form-control rounded-4 text-center amount-input-lg" required>
+                </div>
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100 rounded-3 shadow-sm fw-bold">
-                        Guardar Gasto
-                    </button>
-                </form>
-            </div>
+                <button type="submit" class="btn btn-primary btn-lg w-100 rounded-4 shadow-sm fw-bold py-3">
+                    <i class="bi bi-plus-circle-fill me-2"></i> Guardar Gasto
+                </button>
+            </form>
         </section>
 
-        <!-- Historial de Gastos (Grilla) -->
+        <!-- Historial de Gastos con Filtros Avanzados -->
         <section>
-            <h2 class="h5 fw-bold mb-3 text-secondary">Últimos Gastos</h2>
-            <div class="d-flex flex-column gap-3" id="historyGrid">
-                
-                <!-- Los gastos se cargarán dinámicamente -->
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h6 fw-bold mb-0 text-muted text-uppercase">Historial de Gastos</h2>
+                <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2 fw-bold" id="historyFilterTotal">-$0</span>
+            </div>
 
+            <!-- Chips de Filtros de Fecha -->
+            <div class="d-flex gap-2 overflow-x-auto no-scrollbar mb-3 pb-1" id="historyFilterContainer">
+                <button type="button" class="filter-chip active" data-filter="today">Hoy</button>
+                <button type="button" class="filter-chip" data-filter="week">Esta semana</button>
+                <button type="button" class="filter-chip" data-filter="month">Este mes</button>
+                <button type="button" class="filter-chip" data-filter="last_month">Último mes</button>
+                <button type="button" class="filter-chip" data-filter="custom">Personalizado</button>
+            </div>
+
+            <!-- Selector de Rango Personalizado (Oculto por defecto) -->
+            <div class="card-custom p-3 mb-3 d-none fade-in" id="customDateRangeBox">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label text-muted x-small mb-1 fw-semibold">Desde</label>
+                        <input type="date" id="historyDateFrom" class="form-control form-control-sm rounded-3">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label text-muted x-small mb-1 fw-semibold">Hasta</label>
+                        <input type="date" id="historyDateTo" class="form-control form-control-sm rounded-3">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lista de Gastos -->
+            <div class="d-flex flex-column gap-2" id="historyGrid">
+                <!-- Se cargará dinámicamente -->
             </div>
         </section>
 
     </main>
 
-    <!-- Pantalla de Configuración (Oculta por defecto) -->
-    <main class="container mt-4 d-none fade-in" id="configView" style="max-width: 450px;">
-        
-        <section class="card border-0 shadow-sm rounded-4 mb-4">
-            <div class="card-body p-4">
-                <h2 class="h5 fw-bold mb-3 text-secondary">Integrantes de la Familia</h2>
-                <p class="small text-muted mb-3">Administra quiénes pueden registrar gastos en la app.</p>
-                
-                <!-- Lista de Integrantes (Maqueta Visual) -->
-                <ul class="list-group list-group-flush mb-4" id="configMembersList">
-                    <!-- Los integrantes se cargarán dinámicamente desde JS -->
-                </ul>
+    <!-- Pantalla de Configuración -->
+    <main class="container mt-3 d-none fade-in" id="configView" style="max-width: 480px;">
+        <section class="card-custom p-4 mb-4">
+            <h2 class="h6 fw-bold mb-3 text-secondary">Integrantes de la Familia</h2>
+            <p class="small text-muted mb-3">Administrá quiénes pueden registrar gastos en la app.</p>
+            
+            <ul class="list-group list-group-flush mb-4" id="configMembersList"></ul>
 
-                <!-- Formulario Agregar Integrante -->
-                <h3 class="h6 fw-bold mb-2 text-secondary">Agregar Nuevo</h3>
-                <div class="input-group shadow-sm rounded-3 overflow-hidden">
-                    <input type="text" id="newEmojiInput" class="form-control border-0 bg-light" placeholder="Emoji (ej. 🐶)" style="max-width: 100px;">
-                    <input type="text" id="newNameInput" class="form-control border-0 bg-light border-start border-white" placeholder="Nombre">
-                    <button class="btn btn-primary fw-bold px-3" type="button" id="addMemberBtn">Agregar</button>
-                </div>
+            <h3 class="h6 fw-bold mb-2 text-secondary">Agregar Integrante</h3>
+            <div class="input-group shadow-sm rounded-3 overflow-hidden mb-4">
+                <input type="text" id="newEmojiInput" class="form-control border-0 bg-light" placeholder="Emoji (ej. 🐶)" style="max-width: 90px;">
+                <input type="text" id="newNameInput" class="form-control border-0 bg-light border-start" placeholder="Nombre">
+                <button class="btn btn-primary fw-bold px-3" type="button" id="addMemberBtn">Agregar</button>
+            </div>
 
-                <hr class="my-4">
+            <hr class="my-4">
 
-                <h2 class="h5 fw-bold mb-3 text-secondary">Motivos Rápidos</h2>
-                <ul class="list-group list-group-flush mb-4" id="configMotivesList">
-                    <!-- Los motivos se cargarán dinámicamente desde JS -->
-                </ul>
+            <h2 class="h6 fw-bold mb-3 text-secondary">Motivos Rápidos</h2>
+            <ul class="list-group list-group-flush mb-4" id="configMotivesList"></ul>
 
-                <h3 class="h6 fw-bold mb-2 text-secondary">Agregar Motivo</h3>
-                <div class="input-group shadow-sm rounded-3 overflow-hidden">
-                    <input type="text" id="newMotiveEmojiInput" class="form-control border-0 bg-light" placeholder="Emoji (ej. ☕)" style="max-width: 100px;">
-                    <input type="text" id="newMotiveNameInput" class="form-control border-0 bg-light border-start border-white" placeholder="Nombre (ej. Café)">
-                    <button class="btn btn-primary fw-bold px-3" type="button" id="addMotiveBtn">Agregar</button>
-                </div>
+            <h3 class="h6 fw-bold mb-2 text-secondary">Agregar Motivo</h3>
+            <div class="input-group shadow-sm rounded-3 overflow-hidden">
+                <input type="text" id="newMotiveEmojiInput" class="form-control border-0 bg-light" placeholder="Emoji (ej. ☕)" style="max-width: 90px;">
+                <input type="text" id="newMotiveNameInput" class="form-control border-0 bg-light border-start" placeholder="Nombre (ej. Café)">
+                <button class="btn btn-primary fw-bold px-3" type="button" id="addMotiveBtn">Agregar</button>
             </div>
         </section>
 
-        <div class="text-center mt-5 mb-4">
-            <p class="small text-muted">Gastos Hormiga App v1.0<br>Guardado automático local</p>
+        <div class="text-center mt-4 mb-4">
+            <p class="small text-muted">Gastos Hormiga App v2.0<br>Sincronizado en tiempo real + Modo Offline</p>
         </div>
     </main>
 
-    <!-- Pantalla de Reportes (Oculta por defecto) -->
-    <main class="container mt-4 d-none fade-in" id="reportView" style="max-width: 450px;">
-        <section class="card border-0 shadow-sm rounded-4 mb-4">
-            <div class="card-body p-4">
-                <h2 class="h5 fw-bold mb-3 text-secondary">Resumen de Gastos</h2>
-                
-                <!-- Filtros -->
-                <div class="mb-4">
-                    <select class="form-select rounded-3 bg-light border-0" id="reportFilter">
-                        <option value="today">Hoy</option>
-                        <option value="week">Esta semana</option>
-                        <option value="month" selected>Este mes</option>
-                        <option value="all">Todos los tiempos</option>
-                    </select>
-                </div>
-
-                <!-- Total general -->
-                <div class="text-center mb-4">
-                    <p class="text-muted small mb-1">Total Gastado</p>
-                    <h3 class="fw-bold text-danger display-5" id="reportTotal">-$0</h3>
-                </div>
-
-                <!-- Desglose por integrante -->
-                <h4 class="h6 fw-bold mb-3 text-secondary">Por Integrante</h4>
-                <div id="reportByMember" class="d-flex flex-column gap-3 mb-4"></div>
-
-                <!-- Desglose por motivo -->
-                <h4 class="h6 fw-bold mb-3 text-secondary">Por Motivo</h4>
-                <div id="reportByMotive" class="d-flex flex-column gap-3 mb-2"></div>
+    <!-- Pantalla de Reportes -->
+    <main class="container mt-3 d-none fade-in" id="reportView" style="max-width: 480px;">
+        <section class="card-custom p-4 mb-4">
+            <h2 class="h6 fw-bold mb-3 text-secondary">Resumen de Gastos</h2>
+            
+            <!-- Filtros en Reportes -->
+            <div class="mb-3">
+                <select class="form-select rounded-3 bg-light border-0 fw-semibold" id="reportFilter">
+                    <option value="today">Hoy</option>
+                    <option value="week">Esta semana</option>
+                    <option value="month" selected>Este mes</option>
+                    <option value="last_month">El último mes</option>
+                    <option value="all">Todos los tiempos</option>
+                    <option value="custom">Personalizado</option>
+                </select>
             </div>
+
+            <!-- Rango Personalizado para Reportes -->
+            <div class="card bg-light border-0 p-3 mb-3 d-none fade-in" id="reportCustomDateRangeBox">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label text-muted small mb-1">Desde</label>
+                        <input type="date" id="reportDateFrom" class="form-control form-control-sm rounded-3">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label text-muted small mb-1">Hasta</label>
+                        <input type="date" id="reportDateTo" class="form-control form-control-sm rounded-3">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Total general -->
+            <div class="text-center my-4 py-2 bg-light rounded-4">
+                <p class="text-muted small mb-1 fw-semibold">Total Gastado</p>
+                <h3 class="fw-bold text-danger display-5 mb-0" id="reportTotal">-$0</h3>
+            </div>
+
+            <!-- Desglose por integrante -->
+            <h4 class="h6 fw-bold mb-3 text-secondary">Por Integrante</h4>
+            <div id="reportByMember" class="d-flex flex-column gap-3 mb-4"></div>
+
+            <!-- Desglose por motivo -->
+            <h4 class="h6 fw-bold mb-3 text-secondary">Por Motivo</h4>
+            <div id="reportByMotive" class="d-flex flex-column gap-3 mb-2"></div>
         </section>
     </main>
 
-    <!-- Modal de Edición -->
-    <div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+    <!-- Modal para Editar Integrante / Motivo -->
+    <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered px-3">
             <div class="modal-content rounded-4 border-0 shadow">
                 <div class="modal-header border-bottom-0 pb-0">
@@ -189,10 +358,50 @@
         </div>
     </div>
 
-    <!-- Bootstrap 5 JS Bundle (Necesario para algunos componentes interactivos) -->
+    <!-- Modal para Editar Gasto -->
+    <div class="modal fade" id="editExpenseModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered px-3">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold text-dark">Editar Gasto</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="editExpenseForm">
+                    <div class="modal-body">
+                        <!-- Integrante -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold mb-1">¿Quién gastó?</label>
+                            <select id="editExpenseMemberSelect" class="form-select rounded-3 p-2" required></select>
+                        </div>
+                        <!-- Motivo -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold mb-1">Motivo</label>
+                            <input type="text" id="editExpenseMotivoInput" class="form-control rounded-3 p-2" required>
+                        </div>
+                        <!-- Monto -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold mb-1">Monto ($)</label>
+                            <input type="number" id="editExpenseMontoInput" step="any" inputmode="decimal" class="form-control rounded-3 p-2 fw-bold text-danger fs-5" required>
+                        </div>
+                        <!-- Fecha y Hora -->
+                        <div class="mb-2">
+                            <label class="form-label text-muted small fw-semibold mb-1">Fecha y Hora</label>
+                            <input type="datetime-local" id="editExpenseDateInput" class="form-control rounded-3 p-2">
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top-0 pt-0">
+                        <button type="button" class="btn btn-light rounded-3 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary rounded-3 fw-bold px-4" id="saveExpenseEditBtn">Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-    <!-- Lógica de la aplicación centralizada -->
+    <!-- Lógica de la aplicación -->
     <script type="module" src="app.js"></script>
 
     <!-- Registrar Service Worker -->
@@ -200,8 +409,8 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('Service worker registrado', reg))
-                    .catch(err => console.error('Error al registrar service worker', err));
+                    .then(reg => console.log('Service Worker v2 registrado con éxito', reg))
+                    .catch(err => console.error('Error al registrar Service Worker:', err));
             });
         }
     </script>
